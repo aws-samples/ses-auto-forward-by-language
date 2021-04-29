@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  blog-email-forwarder
+
+  SAM Template for blog-email-forwarder application
+  
+Globals:
+  Function:
+    Timeout: 30
+Parameters:
+  FromEmailAddress:
+    Type: String
+    AllowedPattern: '^(.+)@(.+)$'
+  CatchAllEmailAddress:
+    Type: String
+    AllowedPattern: '^(.+)@(.+)$'
+Resources:
+  BlogEmailForwarderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: blog-email-forwarder/
+      Handler: index.lambdaHandler
+      Runtime: nodejs14.x
+      Role: !GetAtt BlogFunctionIAMRole.Arn
+      AutoPublishAlias: "live"
+      Events:
+        EmailEvent:
+          Type: S3
+          Properties:
+            Bucket: !Ref InboxBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                - Name: prefix
+                  Value: info
+      Environment:
+        Variables:
+          SENDER_EMAIL_ADDRESS: !Ref FromEmailAddress
+          CATCHALL_EMAIL_ADDRESS: !Ref CatchAllEmailAddress
+  BlogLookupTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: language
+          AttributeType: S
+      KeySchema:
+        - AttributeName: language
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+      TableName: language-lookup
+
+  BlogFunctionIAMRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: BlogPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: CloudwatchLogsAccess
+                Effect: Allow
+                Action: 'logs:*'
+                Resource: '*'
+              - Sid: DynamoDBAccess
+                Effect: Allow
+                Action: 'dynamodb:*'
+                Resource: '*'
+              - Sid: S3Access
+                Effect: Allow
+                Action: 's3:*'
+                Resource: '*'
+              - Sid: SESAccess
+                Effect: Allow
+                Action: 'ses:SendEmail'
+                Resource: '*'
+              - Sid: ComprehendAccess
+                Effect: Allow
+                Action: 'comprehend:DetectDominantLanguage'
+                Resource: '*'
+  InboxBucket:
+    Type: AWS::S3::Bucket
+
+  InboxBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref InboxBucket
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:PutObject'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref InboxBucket
+                - /*
+            Principal:
+              Service: 'ses.amazonaws.com'
+            Condition:
+              StringLike:
+                'aws:Referer':
+                  - !Ref AWS::AccountId
+Outputs:
+  InboxBucket:
+    Description: "Inbox Bucket ARN"
+    Value: !GetAtt InboxBucket.Arn
