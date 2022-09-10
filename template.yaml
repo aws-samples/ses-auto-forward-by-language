@@ -93,6 +93,11 @@ Resources:
                 Resource: '*'
   InboxBucket:
     Type: AWS::S3::Bucket
+    Properties: 
+      BucketEncryption: 
+        ServerSideEncryptionConfiguration: 
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
 
   InboxBucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
